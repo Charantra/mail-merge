@@ -6,6 +6,7 @@ function isPublic(pathname: string): boolean {
   if (pathname.startsWith('/api/auth/')) return true
   if (pathname.startsWith('/_next/')) return true
   if (pathname.startsWith('/favicon')) return true
+  if (pathname.startsWith('/brand/')) return true
   // Open pixel and click links inside sent mail. Tokens are HMAC-signed.
   if (pathname.startsWith('/mm/o/') || pathname.startsWith('/mm/c/')) return true
   return false

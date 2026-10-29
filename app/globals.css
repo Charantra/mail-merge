@@ -3,6 +3,40 @@
 @tailwind utilities;
 
 html, body {
-  background: #f4f5f8;
+  background: #f6f5f1;
   color: #050a30;
+}
+
+/* Native checkboxes and radios take the brand colour. */
+input[type='checkbox'],
+input[type='radio'] {
+  accent-color: #ff751f;
+  width: 1rem;
+  height: 1rem;
+  cursor: pointer;
+}
+
+::selection {
+  background: rgba(255, 117, 31, 0.22);
+}
+
+/* Thin scrollbars inside panels. */
+.scroll-thin {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(5, 10, 48, 0.18) transparent;
+}
+
+/* Soft dotted backdrop for empty areas. */
+.bg-dots {
+  background-image: radial-gradient(rgba(5, 10, 48, 0.09) 1px, transparent 1px);
+  background-size: 18px 18px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
 }

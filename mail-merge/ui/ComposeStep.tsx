@@ -1,8 +1,9 @@
 'use client'
 
 import { useRef, useState } from 'react'
-import { FILTERS, OPERATORS, isUnary, type Attachment, type Compiled, type MergeSettings, type Op } from '../core'
-import { Badge, Button, Label, Panel, inputClass } from './kit'
+import { FILTERS, OPERATORS, isUnary, type Attachment, type Compiled, type MergedMessage, type MergeSettings, type Op } from '../core'
+import { Badge, Button, Icon, Label, Notice, Panel, Segmented, Switch, inputClass, type IconName } from './kit'
+import { MessageView } from './PreviewStep'
 
 export type MergeFile = Attachment & { shared: boolean }
 
@@ -19,6 +20,7 @@ export function ComposeStep({
   compiled,
   files,
   onFiles,
+  sample,
 }: {
   settings: MergeSettings
   onSettings: (patch: Partial<MergeSettings>) => void
@@ -26,6 +28,8 @@ export function ComposeStep({
   compiled: Compiled
   files: MergeFile[]
   onFiles: (f: MergeFile[]) => void
+  /** The first merged message, for the live preview. */
+  sample?: MergedMessage
 }) {
   const refs = {
     subject: useRef<HTMLInputElement>(null),
@@ -36,6 +40,8 @@ export function ComposeStep({
   const [target, setTarget] = useState<Target>('body')
   const [tool, setTool] = useState<'greeting' | 'if' | 'format' | 'fill' | null>(null)
   const [help, setHelp] = useState(false)
+  const [view, setView] = useState<'edit' | 'preview'>('edit')
+  const [fieldSearch, setFieldSearch] = useState('')
   const sharedRef = useRef<HTMLInputElement>(null)
   const poolRef = useRef<HTMLInputElement>(null)
 
@@ -75,76 +81,147 @@ export function ComposeStep({
   }
 
   const focus = (t: Target) => () => setTarget(t)
-  const ring = (t: Target) => (target === t ? 'ring-1 ring-orange-300' : '')
   const totalMb = files.reduce((n, f) => n + f.bytes.length, 0) / 1048576
 
-  return (
-    <div className="grid gap-4 xl:grid-cols-[1fr_340px]">
-      <div className="space-y-4">
-        <Panel>
-          <div className="grid gap-3">
-            <div className="grid sm:grid-cols-[80px_1fr] items-center gap-2">
-              <span className="text-sm text-slate-500">To</span>
-              <span className="text-sm text-slate-800">
-                {settings.toColumn ? <Badge>{`{{${settings.toColumn}}}`}</Badge> : <Badge tone="red">Choose the email column on the Recipients step</Badge>}
-              </span>
-              <span className="text-sm text-slate-500">CC</span>
-              <input ref={refs.cc} onFocus={focus('cc')} className={`${inputClass} ${ring('cc')}`} value={settings.cc} onChange={e => onSettings({ cc: e.target.value })} placeholder="Optional. A fixed address or a field" />
-              <span className="text-sm text-slate-500">BCC</span>
-              <input ref={refs.bcc} onFocus={focus('bcc')} className={`${inputClass} ${ring('bcc')}`} value={settings.bcc} onChange={e => onSettings({ bcc: e.target.value })} placeholder="Optional" />
-              <span className="text-sm text-slate-500">Subject</span>
-              <input ref={refs.subject} onFocus={focus('subject')} className={`${inputClass} ${ring('subject')}`} value={settings.subject} onChange={e => onSettings({ subject: e.target.value })} placeholder="e.g. {{Company}} x Charantra" />
-            </div>
-          </div>
-        </Panel>
+  const shownFields = headers.filter(h => h.toLowerCase().includes(fieldSearch.trim().toLowerCase()))
+  const row = 'grid grid-cols-[64px_1fr] items-center gap-3 px-5 border-b border-line'
+  const bare = 'w-full bg-transparent py-3 text-sm text-navy placeholder:text-navy/30 focus:outline-none'
+  const TOOLS: { id: NonNullable<typeof tool>; label: string; icon: IconName }[] = [
+    { id: 'greeting', label: 'Greeting line', icon: 'user' },
+    { id: 'if', label: 'If, then, else', icon: 'braces' },
+    { id: 'format', label: 'Formatted field', icon: 'wand' },
+    { id: 'fill', label: 'Fill-in', icon: 'edit' },
+  ]
+  const QUICK: { label: string; text: string; icon: IconName }[] = [
+    { label: 'Record #', text: '{{@record}}', icon: 'hash' },
+    { label: 'Sequence #', text: '{{@sequence}}', icon: 'hash' },
+    { label: 'Today', text: '{{@date}}', icon: 'calendar' },
+  ]
 
-        <Panel
-          title="Message"
-          actions={
-            <div className="flex border border-slate-300 text-xs">
-              {(['text', 'html'] as const).map(f => (
-                <button
-                  key={f}
-                  type="button"
-                  onClick={() => onSettings({ format: f })}
-                  className={`px-2.5 py-1 ${settings.format === f ? 'bg-slate-800 text-white' : 'bg-white text-slate-700 hover:bg-slate-50'}`}
-                >
-                  {f === 'text' ? 'Plain text' : 'HTML'}
-                </button>
-              ))}
+  return (
+    <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_340px] items-start">
+      <div className="space-y-4 min-w-0">
+        <section className="bg-white border border-line rounded-2xl shadow-card overflow-hidden">
+          <header className="flex flex-wrap items-center justify-between gap-3 px-5 py-3 border-b border-line bg-canvas/60">
+            <div className="flex items-center gap-2">
+              <span className="flex gap-1.5" aria-hidden="true">
+                <span className="h-2.5 w-2.5 rounded-full bg-red-300" />
+                <span className="h-2.5 w-2.5 rounded-full bg-amber-300" />
+                <span className="h-2.5 w-2.5 rounded-full bg-emerald-300" />
+              </span>
+              <span className="ml-2 text-sm font-bold text-navy">New message</span>
             </div>
-          }
-        >
-          <textarea
-            ref={refs.body}
-            onFocus={focus('body')}
-            value={settings.body}
-            onChange={e => onSettings({ body: e.target.value })}
-            rows={18}
-            spellCheck
-            placeholder={'Dear {{First Name | default:"Sir or Madam"}},\n\nI am writing about {{Company}}...'}
-            className={`${inputClass} font-mono text-[13px] leading-relaxed ${ring('body')}`}
-          />
-          {settings.format === 'html' && (
-            <p className="text-xs text-slate-500 mt-1">HTML body. Merged values are escaped, so data cannot inject markup.</p>
+            <div className="flex flex-wrap items-center gap-2">
+              <Segmented
+                size="sm"
+                value={settings.format}
+                options={[
+                  { value: 'text', label: 'Plain text' },
+                  { value: 'html', label: 'HTML' },
+                ]}
+                onChange={format => onSettings({ format })}
+              />
+              <Segmented
+                size="sm"
+                value={view}
+                options={[
+                  { value: 'edit', label: <><Icon name="edit" size={13} />Write</> },
+                  { value: 'preview', label: <><Icon name="eye" size={13} />Preview</> },
+                ]}
+                onChange={setView}
+              />
+            </div>
+          </header>
+
+          {view === 'preview' ? (
+            <div className="p-4 bg-canvas/40">
+              {sample ? (
+                <>
+                  <p className="text-xs text-navy/50 mb-2 flex items-center gap-1.5">
+                    <Icon name="eye" size={13} />
+                    As record #{sample.record} will get it. The next step steps through everyone.
+                  </p>
+                  <MessageView m={sample} files={files} />
+                </>
+              ) : (
+                <p className="text-sm text-navy/55 py-10 text-center">Nobody is ticked, so there is no one to preview.</p>
+              )}
+            </div>
+          ) : (
+            <>
+              <div className={row}>
+                <span className="text-xs font-semibold text-navy/45">To</span>
+                <span className="py-2.5">
+                  {settings.toColumn ? (
+                    <span className="inline-flex items-center gap-1.5 pl-1 pr-2.5 py-1 rounded-full bg-orange-50 ring-1 ring-inset ring-orange-300/50 text-[13px] font-semibold text-orange-700">
+                      <span className="grid h-5 w-5 place-items-center rounded-full bg-white">
+                        <Icon name="users" size={11} />
+                      </span>
+                      Each person in {settings.toColumn}
+                    </span>
+                  ) : (
+                    <Badge tone="red">Choose the email column on the Recipients step</Badge>
+                  )}
+                </span>
+              </div>
+              <div className={`${row} ${target === 'cc' ? 'bg-orange-50/40' : ''}`}>
+                <label htmlFor="mm-cc" className="text-xs font-semibold text-navy/45">CC</label>
+                <input id="mm-cc" ref={refs.cc} onFocus={focus('cc')} className={bare} value={settings.cc} onChange={e => onSettings({ cc: e.target.value })} placeholder="Optional. A fixed address or a field" />
+              </div>
+              <div className={`${row} ${target === 'bcc' ? 'bg-orange-50/40' : ''}`}>
+                <label htmlFor="mm-bcc" className="text-xs font-semibold text-navy/45">BCC</label>
+                <input id="mm-bcc" ref={refs.bcc} onFocus={focus('bcc')} className={bare} value={settings.bcc} onChange={e => onSettings({ bcc: e.target.value })} placeholder="Optional" />
+              </div>
+              <div className={`${row} ${target === 'subject' ? 'bg-orange-50/40' : ''}`}>
+                <label htmlFor="mm-subject" className="text-xs font-semibold text-navy/45">Subject</label>
+                <input
+                  id="mm-subject"
+                  ref={refs.subject}
+                  onFocus={focus('subject')}
+                  className={`${bare} text-[15px] font-semibold`}
+                  value={settings.subject}
+                  onChange={e => onSettings({ subject: e.target.value })}
+                  placeholder="e.g. {{Company}} x Charantra"
+                />
+              </div>
+              <textarea
+                ref={refs.body}
+                onFocus={focus('body')}
+                value={settings.body}
+                onChange={e => onSettings({ body: e.target.value })}
+                rows={16}
+                spellCheck
+                aria-label="Message"
+                placeholder={'Dear {{First Name | default:"Sir or Madam"}},\n\nI am writing about {{Company}}...'}
+                className="block w-full resize-y bg-transparent px-5 py-4 font-mono text-[13px] leading-relaxed text-navy placeholder:text-navy/30 focus:outline-none min-h-[320px]"
+              />
+              <footer className="flex flex-wrap items-center justify-between gap-2 px-5 py-2.5 border-t border-line bg-canvas/60 text-xs text-navy/45">
+                <span>
+                  {settings.format === 'html' ? 'HTML body. Merged values are escaped, so data cannot inject markup.' : 'Click a field on the right to drop it in at the cursor.'}
+                </span>
+                <span className="tabular-nums">{settings.body.length} characters</span>
+              </footer>
+            </>
           )}
-        </Panel>
+        </section>
 
         {(compiled.errors.length > 0 || compiled.unknownFields.length > 0) && (
-          <div className="border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800 space-y-1">
-            {compiled.errors.map(e => (
-              <p key={e}>{e}</p>
-            ))}
-            {compiled.unknownFields.length > 0 && (
-              <p>
-                Not a column in the data source: {compiled.unknownFields.map(f => `{{${f}}}`).join(', ')}. These merge as blank.
-              </p>
-            )}
-          </div>
+          <Notice tone="red">
+            <div className="space-y-1">
+              {compiled.errors.map(e => (
+                <p key={e}>{e}</p>
+              ))}
+              {compiled.unknownFields.length > 0 && (
+                <p>
+                  Not a column in the data source: {compiled.unknownFields.map(f => `{{${f}}}`).join(', ')}. These merge as blank.
+                </p>
+              )}
+            </div>
+          </Notice>
         )}
 
         {compiled.fills.length > 0 && (
-          <Panel title="Fill-in answers" actions={<span className="text-xs text-slate-500">Used for every record</span>}>
+          <Panel title="Fill-in answers" icon="edit" subtitle="Answered once, used for every record">
             <div className="grid gap-3 sm:grid-cols-2">
               {compiled.fills.map(p => (
                 <label key={p} className="block">
@@ -160,15 +237,24 @@ export function ComposeStep({
           </Panel>
         )}
 
-        <Panel title="Attachments">
-          <div className="grid gap-4 md:grid-cols-2">
-            <div>
-              <Label>Same files for everyone</Label>
-              <Button onClick={() => sharedRef.current?.click()}>Add files...</Button>
-              <input ref={sharedRef} type="file" multiple className="hidden" onChange={e => { void addFiles(e.target.files, true); e.target.value = '' }} />
-            </div>
-            <div>
-              <Label hint="(file names listed in a column, separated by ;)">Per-record files</Label>
+        <Panel title="Attachments" icon="paperclip" subtitle={files.length ? `${files.length} file${files.length === 1 ? '' : 's'} · ${totalMb.toFixed(1)} MB` : 'Optional'}>
+          <div className="grid gap-3 md:grid-cols-2">
+            <button
+              type="button"
+              onClick={() => sharedRef.current?.click()}
+              className="group flex items-center gap-3 rounded-xl border border-dashed border-navy/20 px-4 py-3.5 text-left transition-all hover:border-orange hover:bg-orange-50/50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-orange"
+            >
+              <span className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-navy/[0.05] text-navy/60 group-hover:bg-orange group-hover:text-navy transition-colors">
+                <Icon name="plus" size={16} />
+              </span>
+              <span>
+                <span className="block text-sm font-bold text-navy">Same files for everyone</span>
+                <span className="block text-xs text-navy/50">A deck or one-pager every person gets</span>
+              </span>
+            </button>
+            <input ref={sharedRef} type="file" multiple className="hidden" onChange={e => { void addFiles(e.target.files, true); e.target.value = '' }} />
+            <div className="rounded-xl border border-line px-4 py-3">
+              <Label hint="(file names in a column, split by ;)">Per-record files</Label>
               <div className="flex gap-2">
                 <select className={inputClass} value={settings.attachmentColumn} onChange={e => onSettings({ attachmentColumn: e.target.value })}>
                   <option value="">No attachment column</option>
@@ -177,64 +263,120 @@ export function ComposeStep({
                   ))}
                 </select>
                 <Button onClick={() => poolRef.current?.click()} disabled={!settings.attachmentColumn}>
-                  Add...
+                  <Icon name="plus" size={14} />
+                  Add
                 </Button>
                 <input ref={poolRef} type="file" multiple className="hidden" onChange={e => { void addFiles(e.target.files, false); e.target.value = '' }} />
               </div>
             </div>
           </div>
           {files.length > 0 && (
-            <ul className="mt-3 divide-y divide-slate-100 border border-slate-200 text-sm">
+            <ul className="mt-3 grid gap-2 sm:grid-cols-2">
               {files.map(f => (
-                <li key={f.name} className="flex items-center justify-between px-3 py-1.5">
-                  <span className="truncate">
-                    {f.name} <span className="text-xs text-slate-400">{(f.bytes.length / 1024).toFixed(0)} KB</span>
+                <li key={f.name} className="group flex items-center gap-3 rounded-xl border border-line bg-canvas/50 px-3 py-2 animate-fade-up">
+                  <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-white border border-line text-navy/60">
+                    <Icon name="file-text" size={15} />
                   </span>
-                  <span className="flex items-center gap-2">
-                    <Badge tone={f.shared ? 'green' : 'slate'}>{f.shared ? 'Everyone' : 'When named in column'}</Badge>
-                    <button type="button" className="text-slate-400 hover:text-red-600" aria-label={`Remove ${f.name}`} onClick={() => onFiles(files.filter(x => x !== f))}>
-                      ×
-                    </button>
+                  <span className="flex-1 min-w-0">
+                    <span className="block text-[13px] font-semibold text-navy truncate">{f.name}</span>
+                    <span className="block text-[11px] text-navy/45">
+                      {(f.bytes.length / 1024).toFixed(0)} KB · {f.shared ? 'Everyone' : 'When named in the column'}
+                    </span>
                   </span>
+                  <button
+                    type="button"
+                    className="grid h-7 w-7 place-items-center rounded-lg text-navy/35 hover:text-red-600 hover:bg-red-50"
+                    aria-label={`Remove ${f.name}`}
+                    onClick={() => onFiles(files.filter(x => x !== f))}
+                  >
+                    <Icon name="x" size={14} />
+                  </button>
                 </li>
               ))}
             </ul>
           )}
-          {totalMb > 20 && <p className="mt-2 text-xs text-amber-700">{totalMb.toFixed(1)} MB in total. Most mail servers reject messages over 20 to 25 MB.</p>}
+          {totalMb > 20 && (
+            <div className="mt-3">
+              <Notice tone="amber">{totalMb.toFixed(1)} MB in total. Most mail servers reject messages over 20 to 25 MB.</Notice>
+            </div>
+          )}
         </Panel>
       </div>
 
-      <aside className="space-y-4">
-        <Panel title="Insert merge field" actions={<span className="text-xs text-slate-500">into {target}</span>}>
-          <div className="flex flex-wrap gap-1.5 max-h-56 overflow-y-auto">
-            {headers.map(h => (
+      <aside className="space-y-4 xl:sticky xl:top-24">
+        <Panel
+          title="Merge fields"
+          icon="braces"
+          actions={<Badge tone="orange">into {target}</Badge>}
+          bodyClassName="p-4"
+        >
+          {headers.length > 8 && (
+            <div className="relative mb-3">
+              <Icon name="search" size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-navy/35 pointer-events-none" />
+              <input className={`${inputClass} pl-8 py-1.5`} placeholder="Find a column" value={fieldSearch} onChange={e => setFieldSearch(e.target.value)} />
+            </div>
+          )}
+          <div className="flex flex-wrap gap-1.5 max-h-56 overflow-y-auto scroll-thin">
+            {shownFields.map(h => (
               <button
                 key={h}
                 type="button"
                 onMouseDown={e => e.preventDefault()}
                 onClick={() => insert(`{{${h}}}`)}
-                className="px-2 py-1 text-xs border border-slate-300 bg-slate-50 hover:bg-orange-50 hover:border-orange-300 text-slate-700"
+                title={`Insert {{${h}}}`}
+                className="group inline-flex items-center gap-1 pl-2 pr-2.5 py-1 text-xs font-semibold border border-line bg-white text-navy rounded-full transition-all hover:border-orange hover:bg-orange-50 hover:text-orange-700 hover:-translate-y-px focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-orange"
               >
+                <Icon name="plus" size={12} className="text-navy/30 group-hover:text-orange-700" />
                 {h}
+              </button>
+            ))}
+            {!shownFields.length && <p className="text-xs text-navy/45">No column matches.</p>}
+          </div>
+          <div className="flex flex-wrap gap-1.5 mt-3 pt-3 border-t border-line">
+            {QUICK.map(q => (
+              <button
+                key={q.text}
+                type="button"
+                onMouseDown={e => e.preventDefault()}
+                onClick={() => insert(q.text)}
+                className="inline-flex items-center gap-1 px-2 py-1 text-[11px] font-semibold rounded-md bg-navy/[0.05] text-navy/65 hover:bg-navy hover:text-white transition-colors"
+              >
+                <Icon name={q.icon} size={11} />
+                {q.label}
               </button>
             ))}
           </div>
         </Panel>
 
-        <Panel title="Rules and blocks">
-          <div className="grid grid-cols-2 gap-1.5">
-            <Button onClick={() => setTool(tool === 'greeting' ? null : 'greeting')}>Greeting line</Button>
-            <Button onClick={() => setTool(tool === 'if' ? null : 'if')}>If...Then...Else</Button>
-            <Button onClick={() => setTool(tool === 'format' ? null : 'format')}>Formatted field</Button>
-            <Button onClick={() => setTool(tool === 'fill' ? null : 'fill')}>Fill-in</Button>
-            <Button onMouseDown={e => e.preventDefault()} onClick={() => insert('{{@record}}')}>Merge Record #</Button>
-            <Button onMouseDown={e => e.preventDefault()} onClick={() => insert('{{@sequence}}')}>Merge Sequence #</Button>
-            <Button onMouseDown={e => e.preventDefault()} onClick={() => insert('{{@date}}')}>Today&apos;s date</Button>
-            <Button onClick={() => setHelp(h => !h)}>{help ? 'Hide syntax' : 'Syntax help'}</Button>
+        <Panel title="Smart blocks" icon="zap" actions={
+          <button type="button" onClick={() => setHelp(h => !h)} className="text-xs font-semibold text-navy/50 hover:text-navy">
+            {help ? 'Hide syntax' : 'Syntax'}
+          </button>
+        } bodyClassName="p-4">
+          <div className="grid grid-cols-2 gap-2">
+            {TOOLS.map(t => {
+              const on = tool === t.id
+              return (
+                <button
+                  key={t.id}
+                  type="button"
+                  aria-expanded={on}
+                  onClick={() => setTool(on ? null : t.id)}
+                  className={`flex flex-col items-start gap-2 rounded-xl border px-3 py-2.5 text-left transition-all focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-orange ${
+                    on ? 'border-orange bg-orange-50 ring-4 ring-orange/10' : 'border-line hover:border-navy/20 hover:bg-canvas'
+                  }`}
+                >
+                  <span className={`grid h-7 w-7 place-items-center rounded-lg ${on ? 'bg-orange text-navy' : 'bg-navy/[0.05] text-navy/60'}`}>
+                    <Icon name={t.icon} size={14} />
+                  </span>
+                  <span className="text-xs font-bold text-navy">{t.label}</span>
+                </button>
+              )
+            })}
           </div>
 
           {tool === 'greeting' && (
-            <div className="mt-3 space-y-2 border-t border-slate-200 pt-3">
+            <div className="mt-4 space-y-2.5 animate-fade-up">
               <div className="grid grid-cols-[1fr_1.4fr_60px] gap-1.5">
                 <select className={inputClass} value={greet.word} onChange={e => setGreet({ ...greet, word: e.target.value })}>
                   {['Dear', 'Hi', 'Hello', 'To'].map(w => <option key={w}>{w}</option>)}
@@ -246,7 +388,7 @@ export function ComposeStep({
                   {[',', ':', '', '!'].map(p => <option key={p} value={p}>{p || '(none)'}</option>)}
                 </select>
               </div>
-              <label className="flex items-center gap-2 text-xs text-slate-600">
+              <label className="flex items-center gap-2 text-xs text-navy/70">
                 <input type="checkbox" checked={greet.filter === 'first'} onChange={e => setGreet({ ...greet, filter: e.target.checked ? 'first' : '' })} />
                 Use only the first word (first name from a full name)
               </label>
@@ -254,8 +396,12 @@ export function ComposeStep({
                 <Label>When the name is blank</Label>
                 <input className={inputClass} value={greet.fallback} onChange={e => setGreet({ ...greet, fallback: e.target.value })} />
               </label>
+              <p className="rounded-lg bg-canvas px-3 py-2 text-xs text-navy/60">
+                Reads as: <span className="font-semibold text-navy">{greet.word} {`{${greet.field}}`}{greet.end}</span>
+              </p>
               <Button
                 variant="primary"
+                className="w-full"
                 onMouseDown={e => e.preventDefault()}
                 onClick={() => insert(`${greet.word} {{${greet.field}${greet.filter ? ' | first' : ''} | default:${quote(greet.fallback)}}}${greet.end}`)}
               >
@@ -265,7 +411,7 @@ export function ComposeStep({
           )}
 
           {tool === 'if' && (
-            <div className="mt-3 space-y-2 border-t border-slate-200 pt-3">
+            <div className="mt-4 space-y-2 animate-fade-up">
               <Label>If</Label>
               <select className={inputClass} value={cond.field} onChange={e => setCond({ ...cond, field: e.target.value })}>
                 {headers.map(h => <option key={h}>{h}</option>)}
@@ -280,6 +426,7 @@ export function ComposeStep({
               <textarea className={inputClass} rows={2} value={cond.otherwise} onChange={e => setCond({ ...cond, otherwise: e.target.value })} />
               <Button
                 variant="primary"
+                className="w-full"
                 onMouseDown={e => e.preventDefault()}
                 onClick={() => {
                   const op = OPERATORS.find(o => o.id === cond.op)!.syntax[0]
@@ -293,7 +440,7 @@ export function ComposeStep({
           )}
 
           {tool === 'format' && (
-            <div className="mt-3 space-y-2 border-t border-slate-200 pt-3">
+            <div className="mt-4 space-y-2 animate-fade-up">
               <select className={inputClass} value={fmt.field} onChange={e => setFmt({ ...fmt, field: e.target.value })}>
                 {headers.map(h => <option key={h}>{h}</option>)}
               </select>
@@ -310,6 +457,7 @@ export function ComposeStep({
               )}
               <Button
                 variant="primary"
+                className="w-full"
                 onMouseDown={e => e.preventDefault()}
                 onClick={() => insert(`{{${fmt.field} | ${fmt.filter}${fmt.arg ? `:${/^[\w.-]+$/.test(fmt.arg) ? fmt.arg : quote(fmt.arg)}` : ''}}}`)}
               >
@@ -319,17 +467,17 @@ export function ComposeStep({
           )}
 
           {tool === 'fill' && (
-            <div className="mt-3 space-y-2 border-t border-slate-200 pt-3">
+            <div className="mt-4 space-y-2 animate-fade-up">
               <Label hint="(answered once, used in every record)">Prompt</Label>
               <input className={inputClass} value={fill} onChange={e => setFill(e.target.value)} placeholder="e.g. Meeting week" />
-              <Button variant="primary" disabled={!fill.trim()} onMouseDown={e => e.preventDefault()} onClick={() => insert(`{{fill:${fill.trim()}}}`)}>
+              <Button variant="primary" className="w-full" disabled={!fill.trim()} onMouseDown={e => e.preventDefault()} onClick={() => insert(`{{fill:${fill.trim()}}}`)}>
                 Insert fill-in
               </Button>
             </div>
           )}
 
           {help && (
-            <div className="mt-3 border-t border-slate-200 pt-3 text-xs text-slate-600 space-y-1.5 font-mono">
+            <div className="mt-4 rounded-xl bg-navy text-white/85 p-3 text-[11px] space-y-1.5 font-mono animate-fade-up overflow-x-auto scroll-thin">
               <p>{'{{First Name}}'}</p>
               <p>{'{{First Name | default:"there"}}'}</p>
               <p>{'{{Full Name | first | title}}'}</p>
@@ -338,16 +486,19 @@ export function ComposeStep({
               <p>{'{{#if Sector = "Fintech"}}...{{else if Stage contains Seed}}...{{else}}...{{/if}}'}</p>
               <p>{'{{#if [Warm Intro] is not empty and Ticket >= 1000000}}...{{/if}}'}</p>
               <p>{'{{@record}} {{@sequence}} {{@date}} {{fill:Prompt}}'}</p>
-              <p className="font-sans text-slate-500">
+              <p className="font-sans text-white/55 pt-1">
                 Operators: = != &lt;&gt; &gt; &lt; &gt;= &lt;=, contains, does not contain, starts with, ends with, is empty, is not empty. = accepts * and ? wildcards. Field names with spaces can be written in [brackets].
               </p>
             </div>
           )}
         </Panel>
 
-        <label className="flex items-start gap-2 text-sm text-slate-700 px-1">
-          <input type="checkbox" className="mt-1" checked={settings.skipDuplicates} onChange={e => onSettings({ skipDuplicates: e.target.checked })} />
-          Merge only the first record for each email address
+        <label className="flex items-start gap-3 bg-white border border-line rounded-2xl shadow-card px-4 py-3 text-sm text-navy cursor-pointer">
+          <Switch checked={settings.skipDuplicates} onChange={skipDuplicates => onSettings({ skipDuplicates })} />
+          <span>
+            <span className="block font-semibold">One email per address</span>
+            <span className="block text-xs text-navy/50">Merge only the first record for each email address</span>
+          </span>
         </label>
       </aside>
     </div>

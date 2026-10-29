@@ -1,8 +1,8 @@
 'use client'
 
-import Link from 'next/link'
 import { useEffect, useState } from 'react'
 import { MailMerge, base64, type SendHandler, type SendResult } from '@/mail-merge'
+import { Shell } from '@/mail-merge/ui/Shell'
 
 const BATCH = 20
 
@@ -73,15 +73,10 @@ export default function MailMergePage() {
   }, [])
 
   return (
-    <main className="px-6 py-6 max-w-[1400px] mx-auto">
-      <div className="flex items-center justify-between mb-1">
-        <h1 className="text-xl font-semibold text-slate-900">Mail merge</h1>
-        <Link href="/mail-merge/tracker" className="text-sm font-medium text-orange-600 hover:underline">
-          Tracker: opens, clicks, replies
-        </Link>
-      </div>
-      <p className="text-sm text-slate-500 mb-5">Personalise one email for every row of a spreadsheet, then send it from Outlook.</p>
-      <MailMerge onSend={sendViaOutlook} sendFrom={me} senders={senders} />
-    </main>
+    <Shell>
+      <main className="flex-1 flex flex-col min-h-0">
+        <MailMerge onSend={sendViaOutlook} sendFrom={me} senders={senders} />
+      </main>
+    </Shell>
   )
 }

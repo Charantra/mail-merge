@@ -9,7 +9,7 @@ const titillium = Titillium_Web({
 })
 
 export const metadata: Metadata = {
-  title: 'Mail merge',
+  title: 'Charantra mail merge',
   description: 'Personalise a spreadsheet and send each row from Outlook.',
 }
 

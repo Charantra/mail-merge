@@ -1,5 +1,12 @@
 # Work log
 
+## 2026-10-29 18:12 - Main branch
+
+- **What:** Created `main` and merged `feat/standalone-mail-merge` and `feat/charantra-shell` into it. The shell commit already contained the standalone commit, so the merge is that one line of history.
+- **Why:** The GitHub repo had no `main` branch. The two feature branches were the only heads.
+- **Files:** `docs/work-log.md`
+- **Check:** On GitHub, `main` shows both commits, and it is the default branch.
+
 ## 2026-10-29 17:40 - Sender list
 
 - **What:** Env updated. Values not recorded.

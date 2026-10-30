@@ -4,6 +4,7 @@ import { useRef, useState } from 'react'
 import { FILTERS, OPERATORS, isUnary, type Attachment, type Compiled, type MergedMessage, type MergeSettings, type Op } from '../core'
 import { Badge, Button, Icon, Label, Notice, Panel, Segmented, Switch, inputClass, type IconName } from './kit'
 import { MessageView } from './PreviewStep'
+import { RichBody, type RichBodyHandle } from './RichBody'
 
 export type MergeFile = Attachment & { shared: boolean }
 
@@ -33,10 +34,10 @@ export function ComposeStep({
 }) {
   const refs = {
     subject: useRef<HTMLInputElement>(null),
-    body: useRef<HTMLTextAreaElement>(null),
     cc: useRef<HTMLInputElement>(null),
     bcc: useRef<HTMLInputElement>(null),
   }
+  const bodyRef = useRef<RichBodyHandle>(null)
   const [target, setTarget] = useState<Target>('body')
   const [tool, setTool] = useState<'greeting' | 'if' | 'format' | 'fill' | null>(null)
   const [help, setHelp] = useState(false)
@@ -60,6 +61,10 @@ export function ComposeStep({
 
   /** Insert at the cursor of the last focused box, as Word's Insert Merge Field does. */
   function insert(text: string) {
+    if (target === 'body') {
+      bodyRef.current?.insert(text)
+      return
+    }
     const el = refs[target].current
     const value = settings[target]
     const start = el?.selectionStart ?? value.length
@@ -112,15 +117,6 @@ export function ComposeStep({
               <span className="ml-2 text-sm font-bold text-navy">New message</span>
             </div>
             <div className="flex flex-wrap items-center gap-2">
-              <Segmented
-                size="sm"
-                value={settings.format}
-                options={[
-                  { value: 'text', label: 'Plain text' },
-                  { value: 'html', label: 'HTML' },
-                ]}
-                onChange={format => onSettings({ format })}
-              />
               <Segmented
                 size="sm"
                 value={view}
@@ -184,21 +180,15 @@ export function ComposeStep({
                   placeholder="e.g. {{Company}} x Charantra"
                 />
               </div>
-              <textarea
-                ref={refs.body}
-                onFocus={focus('body')}
+              <RichBody
+                ref={bodyRef}
                 value={settings.body}
-                onChange={e => onSettings({ body: e.target.value })}
-                rows={16}
-                spellCheck
-                aria-label="Message"
-                placeholder={'Dear {{First Name | default:"Sir or Madam"}},\n\nI am writing about {{Company}}...'}
-                className="block w-full resize-y bg-transparent px-5 py-4 font-mono text-[13px] leading-relaxed text-navy placeholder:text-navy/30 focus:outline-none min-h-[320px]"
+                format={settings.format}
+                onFocus={focus('body')}
+                onChange={(body, format) => onSettings({ body, format })}
               />
               <footer className="flex flex-wrap items-center justify-between gap-2 px-5 py-2.5 border-t border-line bg-canvas/60 text-xs text-navy/45">
-                <span>
-                  {settings.format === 'html' ? 'HTML body. Merged values are escaped, so data cannot inject markup.' : 'Click a field on the right to drop it in at the cursor.'}
-                </span>
+                <span>Click Bold, Italic, Underline, or Link. Link asks for the words and the address.</span>
                 <span className="tabular-nums">{settings.body.length} characters</span>
               </footer>
             </>

@@ -1,5 +1,19 @@
 # Work log
 
+## 2026-10-30 15:05 - Link button with text and address
+
+- **What:** Formatting buttons are labeled Bold, Italic, Underline, Strikethrough, Bullets, Numbers, and Link. Link opens Text and Address fields and inserts the hyperlink. A bare email becomes a mailto link.
+- **Why:** The single-letter buttons and the address prompt required selecting words first.
+- **Files:** `mail-merge/ui/RichBody.tsx`, `mail-merge/ui/richText.ts`, `mail-merge/ui/ComposeStep.tsx`, `scripts/check-mail-merge.mjs`
+- **Check:** On Write the email, click Link, type the words and an address, then Add link. Preview should show the words as a link.
+
+## 2026-10-30 14:59 - Bold and underline in the email
+
+- **What:** The message box now has Bold, Italic, Underline, Strikethrough, lists, and Link. A formatted message is sent as HTML. Spreadsheet values are still escaped.
+- **Why:** The body was a plain text box, so there was no way to format a sentence.
+- **Files:** `mail-merge/ui/RichBody.tsx`, `mail-merge/ui/richText.ts`, `mail-merge/ui/ComposeStep.tsx`, `scripts/check-mail-merge.mjs`
+- **Check:** On Write the email, select a word and click B, then I, then U. Preview should show the formatting. A name with `<` in the sheet should still appear as text.
+
 ## 2026-10-29 18:12 - Main branch
 
 - **What:** Created `main` and merged `feat/standalone-mail-merge` and `feat/charantra-shell` into it. The shell commit already contained the standalone commit, so the merge is that one line of history.

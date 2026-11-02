@@ -9,7 +9,7 @@ import { fileURLToPath } from 'node:url'
 import { loadTs } from './load-ts.mjs'
 
 const core = loadTs(join(dirname(fileURLToPath(import.meta.url)), '..', 'mail-merge', 'core', 'index'))
-const { parseTemplate, render, parseDelimited, toDataset, arrange, duplicateRows, guessEmailColumn, compile, mergeRecords, ready, buildEml, zip, escapeHtml, readWorkbook, toXlsx, messageRows } = core
+const { parseTemplate, render, parseDelimited, toDataset, arrange, duplicateRows, guessEmailColumn, compile, mergeRecords, ready, sendHeld, buildEml, zip, escapeHtml, readWorkbook, toXlsx, messageRows } = core
 
 const row = { 'First Name': 'asha', 'Last Name': 'Rao', Company: 'Northbridge', Sector: 'Fintech', Stage: 'Series A', Ticket: '2500000', 'Last Met': '2026-08-14', Empty: '' }
 const run = (src, extra = {}) => {
@@ -76,6 +76,7 @@ assert.deepEqual(arrange(rows, [{ join: 'and', field: 'Sector', op: 'eq', value:
 assert.deepEqual(arrange(rows, [{ join: 'and', field: 'Sector', op: 'eq', value: 'fintech' }, { join: 'or', field: 'Name', op: 'eq', value: 'C' }], []), [0, 1, 2])
 assert.deepEqual(arrange(rows, [], [{ field: 'Ticket', dir: 'desc' }]), [1, 2, 0], 'numeric sort')
 assert.deepEqual([...duplicateRows(rows, 'Email')], [2], 'duplicates ignore case')
+assert.deepEqual(core.invalidEmailRows([{ Email: 'a@x.com' }, { Email: 'nope' }, { Email: '' }], 'Email'), [1, 2])
 
 // Merge: sequence skips duplicates, errors block, warnings do not
 const mrows = [
@@ -95,6 +96,8 @@ assert.ok(out[1].issues.some(i => i.level === 'warning'), 'blank name is a warni
 assert.ok(out[2].issues.some(i => i.level === 'error'), 'invalid address is an error')
 assert.ok(out[4].issues.some(i => /other\.pdf/.test(i.message)), 'missing attachment is an error')
 assert.deepEqual(ready(out).map(m => m.record), [1, 2])
+assert.equal(sendHeld(out), true, 'one invalid or duplicate holds the whole list')
+assert.equal(sendHeld(ready(out)), false, 'a clean list is free to send')
 assert.ok(compile({ ...settings, body: '{{Nope}}' }, ['Name', 'Email']).unknownFields.includes('Nope'))
 assert.ok(compile({ ...settings, subject: '' }, ['Name']).errors.includes('Subject is empty'))
 
@@ -117,4 +120,41 @@ assert.equal(view.getUint16(z.length - 12, true), 2)
 assert.equal(view.getUint32(14, true), 0x3610a686, 'crc32 of "hello"')
 
 assert.equal(messageRows(ready(out))[0].To, 'asha@x.com')
+
+const classify = loadTs(join(dirname(fileURLToPath(import.meta.url)), '..', 'lib', 'tracker', 'classify'))
+assert.equal(classify.countsAsRecipientBounce('delivery failed for a@x.com', 'a@x.com', ['team@charantra.ai']), true)
+assert.equal(classify.countsAsRecipientBounce('delivery failed for team@charantra.ai', 'a@x.com', ['team@charantra.ai']), false)
+assert.equal(classify.countsAsRecipientBounce('undeliverable', 'a@x.com', []), true)
+assert.equal(classify.countsAsRecipientBounce('undeliverable', 'a@x.com', ['team@charantra.ai']), false)
+
+const ms = loadTs(join(dirname(fileURLToPath(import.meta.url)), '..', 'lib', 'microsoftSignIn'))
+const idPayload = Buffer.from(JSON.stringify({ aud: 'app', iss: 'https://login.microsoftonline.com/tenant/v2.0', exp: 2_000_000_000, preferred_username: 'Asha@Charantra.ai' })).toString('base64url')
+assert.equal(ms.emailFromIdToken(`h.${idPayload}.s`, 'app', 'tenant', 1_700_000_000_000), 'asha@charantra.ai')
+assert.equal(ms.emailFromIdToken(`h.${idPayload}.s`, 'other', 'tenant', 1_700_000_000_000), null)
+assert.equal(ms.signInOrigin('localhost:3000', 'http', 'https://mailmerge.charantra.ai'), 'http://localhost:3000')
+assert.equal(ms.signInOrigin('mailmerge.charantra.ai', 'https', 'https://mailmerge.charantra.ai'), 'https://mailmerge.charantra.ai')
+
+const limits = loadTs(join(dirname(fileURLToPath(import.meta.url)), '..', 'lib', 'sendLimits'))
+assert.deepEqual(limits.batchHolds(['asha@x.com', 'nope', 'asha@x.com']), ['nope is not a valid email.'])
+assert.deepEqual(limits.batchHolds(['asha@x.com']), [])
+
+const rich = loadTs(join(dirname(fileURLToPath(import.meta.url)), '..', 'mail-merge', 'ui', 'richText'))
+assert.equal(rich.plainToEditorHtml('Dear Asha,\n\nHello'), 'Dear Asha,<br><br>Hello')
+assert.equal(rich.htmlLooksEmpty('<div><br></div>'), true)
+assert.equal(rich.htmlLooksEmpty('<b>Hi</b>'), false)
+assert.equal(rich.sanitizeEmailHtml('<b onclick="alert(1)">Hi</b>'), '<b>Hi</b>')
+assert.equal(rich.sanitizeEmailHtml('<script>alert(1)</script><i>ok</i>'), '<i>ok</i>')
+assert.equal(rich.sanitizeEmailHtml('<a href="javascript:alert(1)">x</a>'), '<a>x</a>')
+assert.equal(rich.sanitizeEmailHtml('<a href="javascript&#58;alert(1)">x</a>'), '<a>x</a>')
+assert.equal(rich.sanitizeEmailHtml('<img src=x onerror=alert(1)><a href="https://charantra.ai">site</a>'), '<a href="https://charantra.ai">site</a>')
+assert.equal(rich.sanitizeEmailHtml('<o:p>Hi</o:p>'), 'Hi')
+assert.equal(rich.linkHtml('Book a call', 'charantra.ai'), '<a href="https://charantra.ai">Book a call</a>')
+assert.equal(rich.linkHtml('', 'https://x.com'), '<a href="https://x.com">https://x.com</a>')
+assert.equal(rich.linkHtml('<b>x</b>', 'https://x.com'), '<a href="https://x.com">&lt;b&gt;x&lt;/b&gt;</a>')
+assert.equal(rich.linkHtml('HR', 'hr@charantra.ai'), '<a href="mailto:hr@charantra.ai">HR</a>')
+assert.equal(rich.linkHtml('x', 'javascript:alert(1)'), null)
+assert.equal(rich.hrefFromPrompt('charantra.ai'), 'https://charantra.ai')
+assert.equal(rich.hrefFromPrompt('javascript:alert(1)'), null)
+assert.equal(rich.safeHref('mailto:hr@charantra.ai'), 'mailto:hr@charantra.ai')
+
 console.log('check:mailmerge ok')

@@ -113,6 +113,20 @@ export function isInternalEmail(email: string | null | undefined): boolean {
   return INTERNAL_DOMAINS.some(d => domain === d || domain.endsWith('.' + d))
 }
 
+/**
+ * A bounce notice on a message that also has CC. Counts only when it names the To
+ * address. A notice that names only a CC is the copy, not the person in To.
+ * When no address is named and there is no CC, the notice still counts.
+ */
+export function countsAsRecipientBounce(text: string, toEmail: string, cc: string[]): boolean {
+  const body = (text || '').toLowerCase()
+  const to = toEmail.trim().toLowerCase()
+  const copies = cc.map(a => a.trim().toLowerCase()).filter(a => a && a !== to)
+  if (to && body.includes(to)) return true
+  if (copies.some(a => body.includes(a))) return false
+  return copies.length === 0
+}
+
 export function classifyInbound(subject: string, preview: string): InboundClass {
   const txt = `${subject || ''} ${preview || ''}`
   if (

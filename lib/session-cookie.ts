@@ -12,11 +12,9 @@ export interface SessionPayload {
 }
 
 function secret(): string {
-  const s = process.env.AUTH_SECRET?.trim()
-  if (!s || s.length < 32) {
-    throw new Error(
-      'AUTH_SECRET is missing or too short (must be 32+ chars). Set it in .env.local.',
-    )
+  const s = process.env.AZURE_CLIENT_SECRET?.trim()
+  if (!s || s.length < 16) {
+    throw new Error('AZURE_CLIENT_SECRET is missing. Microsoft sign-in cannot start a session.')
   }
   return s
 }

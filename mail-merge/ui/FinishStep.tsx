@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { buildEml, emlName, messageRows, printDocument, toCsv, toXlsx, zip, type MergedMessage } from '../core'
+import { buildEml, emlName, messageRows, printDocument, sendHeld, toCsv, toXlsx, zip, type MergedMessage } from '../core'
 import type { MergeFile } from './ComposeStep'
 import { Avatar, Badge, Button, Icon, Label, Modal, Notice, Panel, Stat, download, inputClass, type IconName } from './kit'
 import { filesFor } from './PreviewStep'
@@ -37,6 +37,7 @@ export function FinishStep({
   sent,
   onSent,
   templateErrors,
+  invalidCount,
   name,
 }: {
   messages: MergedMessage[]
@@ -54,6 +55,8 @@ export function FinishStep({
   onSent: (results: SendResult[]) => void
   /** Template problems that block every record. */
   templateErrors: string[]
+  /** Invalid or missing addresses anywhere in the list, ticked or not. */
+  invalidCount: number
   name: string
 }) {
   const [busy, setBusy] = useState<string | null>(null)
@@ -73,13 +76,15 @@ export function FinishStep({
   const readySet = new Set(ready.map(m => m.index))
   const blockedList = messages.filter(m => !m.skipped && !doneSet.has(m.index) && !readySet.has(m.index))
   const blocked = blockedList.length
-  // Group the reasons so the summary says what to fix, not just how many.
+  const stillOpen = messages.filter(m => !doneSet.has(m.index))
+  // Any invalid address in the sheet holds the button, even if that row is unticked.
+  const held = invalidCount > 0 || sendHeld(stillOpen) || templateErrors.length > 0
   const reasons = new Map<string, number[]>()
-  for (const m of blockedList) {
-    const errs = m.issues.filter(i => i.level === 'error').map(i => i.message)
-    for (const e of errs.length ? errs : templateErrors.length ? templateErrors : ['Template has errors']) {
-      reasons.set(e, [...(reasons.get(e) ?? []), m.record])
-    }
+  if (invalidCount > 0) reasons.set(`${invalidCount} invalid or missing email${invalidCount === 1 ? '' : 's'}`, [])
+  for (const e of templateErrors) reasons.set(e, [])
+  for (const m of stillOpen) {
+    const errs = [...(m.skipped ? [m.skipped] : []), ...m.issues.filter(i => i.level === 'error').map(i => i.message)]
+    for (const e of errs) reasons.set(e, [...(reasons.get(e) ?? []), m.record])
   }
   const stamp = new Date().toISOString().slice(0, 10)
   const base = `${name.replace(/\.[^.]+$/, '').replace(/[<>:"/\\|?*]/g, '_') || 'mail-merge'} ${stamp}`
@@ -113,7 +118,7 @@ export function FinishStep({
 
   /** Runs after the person confirmed in the dialog. */
   async function send() {
-    if (!onSend) return
+    if (!onSend || held) return
     setProgress({ done: 0, total: ready.length })
     try {
       const results = await onSend(
@@ -158,19 +163,20 @@ export function FinishStep({
         <Stat icon="copy" tone="amber" value={skipped} label="duplicates skipped" />
       </div>
 
-      {blocked > 0 && (
+      {held && (
         <Notice tone="red">
-          <p className="font-semibold">
-            {blocked} email{blocked === 1 ? '' : 's'} will not go out until these are fixed
-          </p>
+          <p className="font-semibold">Sending is blocked until these rows are removed</p>
           <ul className="mt-1.5 space-y-1">
             {Array.from(reasons).map(([reason, records]) => (
               <li key={reason}>
-                {reason} <span className="text-red-700/70">(record{records.length === 1 ? '' : 's'} {records.map(r => `#${r}`).join(', ')})</span>
+                {reason}
+                {records.length > 0 && (
+                  <span className="text-red-700/70"> (record{records.length === 1 ? '' : 's'} {records.map(r => `#${r}`).join(', ')})</span>
+                )}
               </li>
             ))}
           </ul>
-          <p className="mt-2 text-red-800/80">Go back and fix these, or exclude those people on the previous step.</p>
+          <p className="mt-2 text-red-800/80">Nothing goes out until every email in the list is valid. Fix the address on the recipient step. Unticking a bad row does not turn Send back on.</p>
         </Notice>
       )}
       {done.length > 0 && !ready.length && !blocked && (
@@ -187,7 +193,7 @@ export function FinishStep({
                 Send from Outlook
               </p>
               <h2 className="mt-2 text-2xl font-bold tracking-tight">
-                {ready.length ? `${ready.length} personalised email${plural}, one per person` : 'Nothing is ready to send'}
+                {held ? 'Sending is blocked' : ready.length ? `${ready.length} personalised email${plural}, one per person` : 'Nothing is ready to send'}
               </h2>
               <p className="mt-1.5 text-sm text-white/65 max-w-xl">Each email goes out on its own, so recipients never see each other. Replies come back to the mailbox it was sent from.</p>
               {senders && senders.length > 1 ? (
@@ -217,9 +223,9 @@ export function FinishStep({
               )}
             </div>
             <div className="lg:min-w-[260px]">
-              <Button variant="primary" size="lg" className="w-full" disabled={!ready.length || !!busy} onClick={() => setConfirming(true)}>
+              <Button variant="primary" size="lg" className="w-full" disabled={held || !ready.length || !!busy} onClick={() => setConfirming(true)}>
                 <Icon name="send" size={17} />
-                {progress ? `Sending ${progress.done} of ${progress.total}` : `Send ${ready.length} email${plural}`}
+                {progress ? `Sending ${progress.done} of ${progress.total}` : held ? 'Send blocked' : `Send ${ready.length} email${plural}`}
               </Button>
             </div>
           </div>

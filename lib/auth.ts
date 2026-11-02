@@ -1,4 +1,3 @@
-import { timingSafeEqual } from 'crypto'
 import { cookies } from 'next/headers'
 import {
   COOKIE_NAME,
@@ -15,17 +14,6 @@ function allowedDomain(): string {
 
 export function isEmailAllowed(email: string): boolean {
   return email.trim().toLowerCase().endsWith(`@${allowedDomain()}`)
-}
-
-export function checkPassword(input: string): boolean {
-  const expected = process.env.AUTH_PASSWORD?.trim()
-  if (!expected) {
-    throw new Error('AUTH_PASSWORD not set. Configure it in .env.local.')
-  }
-  const a = Buffer.from(input)
-  const b = Buffer.from(expected)
-  if (a.length !== b.length) return false
-  return timingSafeEqual(a, b)
 }
 
 /** Read + validate the session from the request cookie store. Returns email or null. */

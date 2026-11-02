@@ -172,3 +172,8 @@ export function mergeRecords(
 export function ready(messages: MergedMessage[]): MergedMessage[] {
   return messages.filter(m => !m.skipped && !m.issues.some(i => i.level === 'error'))
 }
+
+/** One invalid address or duplicate holds every message. The send waits until that row is gone. */
+export function sendHeld(messages: { skipped?: string; issues: { level: string }[] }[]): boolean {
+  return messages.some(m => !!m.skipped || m.issues.some(i => i.level === 'error'))
+}

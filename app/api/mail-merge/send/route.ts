@@ -4,7 +4,7 @@ import { sendFirstMessage, GraphNotSentError } from '@/lib/graphSend'
 import { suppressionFor, audit } from '@/lib/events'
 import { beginSendRequest, completeSendRequest, type StoredSendResponse } from '@/lib/sendRequests'
 import { getSessionFromRequest } from '@/lib/session-cookie'
-import { BATCH_SIZE } from '@/lib/sendLimits'
+import { BATCH_SIZE, batchHolds } from '@/lib/sendLimits'
 import { trackingBase } from '@/lib/tracking'
 import type { Attachment } from '@/lib/types'
 import { ensureRun, insertSending, instrumentMergeHtml, markNotSent, markSent, newMessageId } from '@/lib/mailMergeStore'
@@ -103,12 +103,19 @@ function explain(message: string, from: string): string {
   return message
 }
 
+function holdError(holds: string[]): string {
+  const shown = holds.slice(0, 15).join(' ')
+  const more = holds.length > 15 ? ` and ${holds.length - 15} more.` : ''
+  return `Nothing was sent. Remove these first: ${shown}${more}`
+}
+
 /**
  * POST /api/mail-merge/send { messages } + Idempotency-Key header.
  *
  * Sends up to BATCH_SIZE merged messages through Outlook (Microsoft Graph), one at a time,
- * 300ms apart. The person confirmed the send on screen. Addresses on the suppression list are
- * skipped. A retry with the same key replays the first result and sends nothing again.
+ * 300ms apart. The person confirmed the send on screen. One invalid address holds the whole
+ * batch: nothing in it is sent. Addresses on the suppression list are skipped. A retry with
+ * the same key replays the first result and sends nothing again.
  */
 export async function POST(req: NextRequest) {
   const operator = await getSessionFromRequest(req)
@@ -135,6 +142,9 @@ export async function POST(req: NextRequest) {
   if (!allowedSenders(operator).includes(from)) {
     return NextResponse.json({ error: `You may not send from ${from}. Ask an admin to add it to MAIL_MERGE_SENDERS. Nothing was sent.` }, { status: 403 })
   }
+
+  const holds = batchHolds(messages.flatMap(m => [...m.to, ...m.cc, ...m.bcc]))
+  if (holds.length) return NextResponse.json({ error: holdError(holds) }, { status: 400 })
 
   const requestHash = sha256(
     JSON.stringify({ runId, from, messages:messages.map(m => ({ ...m, attachments: m.attachments.map(a => [a.name, sha256(a.content)]) })) }),

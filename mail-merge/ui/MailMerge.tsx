@@ -12,6 +12,7 @@ import {
   compile,
   duplicateRows,
   guessEmailColumn,
+  invalidEmailRows,
   mergeRecords,
   ready as readyOnly,
   toDataset,
@@ -93,6 +94,7 @@ export function MailMerge({ onSend, sendFrom, senders, storageKey = 'mail-merge:
   const passing = useMemo(() => arrange(dataset.rows, rules, sorts), [dataset.rows, rules, sorts])
   const order = useMemo(() => passing.filter(i => !excluded.has(i)), [passing, excluded])
   const duplicates = useMemo(() => (settings.toColumn ? duplicateRows(dataset.rows, settings.toColumn) : new Set<number>()), [dataset.rows, settings.toColumn])
+  const invalidEmails = useMemo(() => invalidEmailRows(dataset.rows, settings.toColumn), [dataset.rows, settings.toColumn])
   const compiled = useMemo(() => compile(settings, dataset.headers), [settings, dataset.headers])
   const messages = useMemo(
     () => mergeRecords(dataset.rows, order, settings, compiled, { availableFiles: files.map(f => f.name) }),
@@ -301,6 +303,7 @@ export function MailMerge({ onSend, sendFrom, senders, storageKey = 'mail-merge:
                   return next
                 })}
                 templateErrors={compiled.errors}
+                invalidCount={invalidEmails.length}
                 name={source?.name ?? ''}
               />
             )}

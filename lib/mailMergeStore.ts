@@ -11,7 +11,7 @@ import { query, queryOne } from './db'
 import { makeToken, trackingBase } from './tracking'
 import { inboundInConversation } from './graphSend'
 import { graphFetch, odataString } from './outlook'
-import { classifyInbound } from './tracker/classify'
+import { classifyInbound, countsAsRecipientBounce } from './tracker/classify'
 
 export type MergeMessageRow = {
   id: string
@@ -123,7 +123,7 @@ export async function recordOpen(id: string, machine: boolean): Promise<void> {
       ? `UPDATE mail_merge_messages SET machine_open_count = machine_open_count + 1 WHERE id = $1`
       : `UPDATE mail_merge_messages
             SET open_count = open_count + 1, first_opened_at = COALESCE(first_opened_at, now()), last_opened_at = now()
-          WHERE id = $1`,
+          WHERE id = $1 AND bounced_at IS NULL`,
     [id],
   )
 }
@@ -137,7 +137,7 @@ export async function recordClick(id: string, url: string, machine: boolean): Pr
                 clicked_urls = CASE WHEN $2 = ANY(clicked_urls) THEN clicked_urls ELSE array_append(clicked_urls, $2) END,
                 -- A click means the email was opened, even when images were blocked.
                 first_opened_at = COALESCE(first_opened_at, now())
-          WHERE id = $1`,
+          WHERE id = $1 AND bounced_at IS NULL`,
     machine ? [id] : [id, url.slice(0, 1000)],
   )
 }
@@ -165,9 +165,9 @@ export async function listRuns(): Promise<RunSummary[]> {
     `SELECT r.id, r.name, r.subject, r.mailbox, r.tracking, r.created_by, r.created_at,
             count(*) FILTER (WHERE m.status IN ('sent','unknown'))::int AS sent,
             count(*) FILTER (WHERE m.status = 'failed')::int AS failed,
-            count(*) FILTER (WHERE m.first_opened_at IS NOT NULL)::int AS opened,
-            count(*) FILTER (WHERE m.click_count > 0)::int AS clicked,
-            count(*) FILTER (WHERE m.replied_at IS NOT NULL)::int AS replied,
+            count(*) FILTER (WHERE m.bounced_at IS NULL AND m.first_opened_at IS NOT NULL)::int AS opened,
+            count(*) FILTER (WHERE m.bounced_at IS NULL AND m.click_count > 0)::int AS clicked,
+            count(*) FILTER (WHERE m.bounced_at IS NULL AND m.replied_at IS NOT NULL)::int AS replied,
             count(*) FILTER (WHERE m.bounced_at IS NOT NULL)::int AS bounced
        FROM mail_merge_runs r
        LEFT JOIN mail_merge_messages m ON m.run_id = r.id
@@ -239,12 +239,17 @@ export async function checkReplies(runId?: string): Promise<ReplyCheckResult> {
       let replied: (typeof inbound)[number][] = []
       let bounceAt: string | null = null
       let bounceReason: string | null = null
+      let ccBounceOnly = false
       let autoAt: string | null = null
       for (const m of inbound) {
         const kind = classifyInbound(m.subject, m.bodyText.slice(0, 600))
         if (isDaemon(m.fromEmail) || kind === 'Bounced') {
-          bounceAt ??= m.receivedDateTime
-          bounceReason ??= m.subject
+          if (countsAsRecipientBounce(`${m.subject}\n${m.bodyText}`, r.to_email, r.cc || [])) {
+            bounceAt ??= m.receivedDateTime
+            bounceReason ??= m.subject
+          } else {
+            ccBounceOnly = true
+          }
         } else if (kind === 'OOO') {
           autoAt ??= m.receivedDateTime
         } else {
@@ -270,8 +275,14 @@ export async function checkReplies(runId?: string): Promise<ReplyCheckResult> {
                 reply_snippet = COALESCE($4, reply_snippet),
                 reply_count = GREATEST(reply_count, $5),
                 auto_reply_at = COALESCE(auto_reply_at, $6::timestamptz),
-                bounced_at = COALESCE(bounced_at, $7::timestamptz),
-                bounce_reason = COALESCE(bounce_reason, $8),
+                bounced_at = CASE
+                  WHEN $7::timestamptz IS NOT NULL THEN COALESCE(bounced_at, $7)
+                  WHEN $9::boolean THEN NULL
+                  ELSE bounced_at END,
+                bounce_reason = CASE
+                  WHEN $7::timestamptz IS NOT NULL THEN COALESCE(bounce_reason, $8)
+                  WHEN $9::boolean THEN NULL
+                  ELSE bounce_reason END,
                 checked_at = now()
           WHERE id = $1`,
         [
@@ -283,6 +294,7 @@ export async function checkReplies(runId?: string): Promise<ReplyCheckResult> {
           autoAt,
           bounceAt,
           bounceReason,
+          ccBounceOnly && !bounceAt,
         ],
       )
       out.checked++

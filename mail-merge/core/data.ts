@@ -136,6 +136,17 @@ export function isValidEmail(s: string): boolean {
   return EMAIL.test(s.trim())
 }
 
+/** Row indices whose email cell is empty or not a valid address. */
+export function invalidEmailRows(rows: Row[], column: string): number[] {
+  if (!column) return []
+  const bad: number[] = []
+  rows.forEach((row, i) => {
+    const addresses = splitAddresses(lookup(row, column) ?? '')
+    if (!addresses.length || addresses.some(address => !isValidEmail(address))) bad.push(i)
+  })
+  return bad
+}
+
 /** The column that most looks like email addresses: by header name first, then by content. */
 export function guessEmailColumn(ds: Dataset): string | null {
   const byName = ds.headers.find(h => /^(e-?mail|email address|e-mail address|mail)$/i.test(h.trim()))

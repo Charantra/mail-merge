@@ -26,6 +26,7 @@ type Msg = {
   id: string
   record: number | null
   to_email: string
+  cc: string[]
   subject: string
   status: 'sending' | 'sent' | 'failed' | 'unknown'
   error: string | null
@@ -75,10 +76,10 @@ function stage(m: Msg): { label: string; tone: 'slate' | 'red' | 'amber' | 'gree
 function matches(m: Msg, f: Filter): boolean {
   switch (f) {
     case 'All': return true
-    case 'Opened': return !!m.first_opened_at
-    case 'Not opened': return m.status === 'sent' && !m.first_opened_at
-    case 'Clicked': return m.click_count > 0
-    case 'Replied': return !!m.replied_at
+    case 'Opened': return !!m.first_opened_at && !m.bounced_at
+    case 'Not opened': return m.status === 'sent' && !m.first_opened_at && !m.bounced_at
+    case 'Clicked': return m.click_count > 0 && !m.bounced_at
+    case 'Replied': return !!m.replied_at && !m.bounced_at
     case 'No reply': return m.status === 'sent' && !m.replied_at && !m.bounced_at
     case 'Bounced': return !!m.bounced_at
     case 'Failed': return m.status === 'failed' || m.status === 'unknown'
@@ -293,6 +294,12 @@ export default function MailMergeTrackerPage() {
                   </div>
                 </div>
 
+                {messages.some(m => m.cc?.length > 0) && (
+                  <Notice tone="amber">
+                    These emails also have a CC. The tracking image is in that copy too, so an open can be the CC rather than the person in To. A bounce counts only when the notice names the To address.
+                  </Notice>
+                )}
+
                 <div className="grid gap-3 grid-cols-2 lg:grid-cols-5">
                   <div className="bg-navy text-white rounded-2xl shadow-card px-4 py-3.5 col-span-2 lg:col-span-1">
                     <div className="flex items-center justify-between">
@@ -300,7 +307,9 @@ export default function MailMergeTrackerPage() {
                       <Icon name="send" size={15} className="text-orange" />
                     </div>
                     <div className="text-2xl font-bold tabular-nums mt-1.5">{run.sent}</div>
-                    <div className="text-[11px] text-white/50 mt-0.5">{run.failed > 0 ? `${run.failed} failed` : 'none failed'}</div>
+                    <div className="text-[11px] text-white/50 mt-0.5">
+                      {run.bounced > 0 ? `${run.bounced} bounced` : run.failed > 0 ? `${run.failed} failed` : 'none failed'}
+                    </div>
                   </div>
                   {kpis.map(k => {
                     const share = run.sent ? k.value / run.sent : 0
@@ -363,6 +372,7 @@ export default function MailMergeTrackerPage() {
                                   <Avatar text={m.to_email} size={28} />
                                   <span className="min-w-0">
                                     <span className="block font-semibold text-navy break-all">{m.to_email}</span>
+                                    {m.cc?.length > 0 && <span className="block text-[11px] text-navy/45 break-all">CC {m.cc.join(', ')}</span>}
                                     {m.error && <span className="block text-xs text-red-600">{m.error}</span>}
                                   </span>
                                 </span>
@@ -377,6 +387,8 @@ export default function MailMergeTrackerPage() {
                               <td className="px-4 py-3 text-xs text-navy/60 whitespace-nowrap">
                                 {!m.tracking ? (
                                   <span className="text-navy/35">not tracked</span>
+                                ) : m.bounced_at ? (
+                                  <span className="text-navy/35">bounced</span>
                                 ) : m.first_opened_at ? (
                                   <>
                                     {when(m.first_opened_at)}
@@ -393,6 +405,8 @@ export default function MailMergeTrackerPage() {
                               <td className="px-4 py-3 text-xs text-navy/60">
                                 {!m.tracking ? (
                                   <span className="text-navy/35">not tracked</span>
+                                ) : m.bounced_at ? (
+                                  <span className="text-navy/35">bounced</span>
                                 ) : m.click_count > 0 ? (
                                   <>
                                     {when(m.first_clicked_at)} · {m.click_count}x

@@ -1,7 +1,6 @@
 'use client'
 
-import { useState, FormEvent } from 'react'
-import { useRouter } from 'next/navigation'
+import { useEffect, useState } from 'react'
 import { Icon } from '@/mail-merge/ui/kit'
 
 const STEPS = ['Import your investor list.', 'Personalize and review.', 'Send through Outlook.']
@@ -44,39 +43,22 @@ function SamplePreview() {
   )
 }
 
+const ERRORS: Record<string, string> = {
+  domain: 'That Microsoft account is not a Charantra address.',
+  redirect: 'Microsoft sign-in is not registered for this site yet. Add /api/auth/microsoft/callback to the Azure app.',
+  denied: 'Microsoft sign-in was cancelled.',
+  config: 'Microsoft sign-in is not configured on this server.',
+  state: 'Sign-in expired. Try again.',
+  failed: 'Microsoft did not complete sign-in. Try again.',
+}
+
 export default function LoginPage() {
-  const router = useRouter()
-  const [email, setEmail] = useState('')
-  const [password, setPassword] = useState('')
-  const [show, setShow] = useState(false)
   const [error, setError] = useState('')
-  const [loading, setLoading] = useState(false)
 
-  async function handleSubmit(e: FormEvent) {
-    e.preventDefault()
-    setError('')
-    setLoading(true)
-    try {
-      const res = await fetch('/api/auth/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password }),
-      })
-      const data = await res.json() as { ok?: boolean; error?: string }
-      if (!res.ok || !data.ok) {
-        setError(data.error || 'Login failed.')
-        return
-      }
-      router.replace('/mail-merge')
-    } catch {
-      setError('Network error. Please try again.')
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  const field =
-    'w-full h-11 border bg-white rounded-lg pl-10 pr-3 text-sm text-navy placeholder:text-navy/45 transition-shadow hover:border-navy/25 focus:outline-none focus:border-orange focus:shadow-glow aria-[invalid=true]:border-red-400'
+  useEffect(() => {
+    const code = new URLSearchParams(window.location.search).get('error') || ''
+    setError(ERRORS[code] || (code ? ERRORS.failed : ''))
+  }, [])
 
   return (
     <div className="min-h-screen lg:grid lg:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)] bg-canvas">
@@ -123,76 +105,34 @@ export default function LoginPage() {
       </section>
 
       <section className="min-h-screen lg:min-h-0 flex items-center justify-center px-5 sm:px-8 py-12">
-        <form onSubmit={handleSubmit} aria-busy={loading} className="w-full max-w-[400px]">
+        <div className="w-full max-w-[400px]">
           <img src="/brand/charantra-logo.png" alt="Charantra" className="h-12 w-auto mb-10 lg:hidden" />
           <h2 className="text-[28px] font-bold text-navy tracking-tight leading-tight">Welcome back</h2>
-          <p className="text-sm text-navy/65 mt-2 mb-8">Sign in to prepare, review and send a merge.</p>
-
-          <label htmlFor="email" className="block text-sm font-semibold text-navy mb-1.5">
-            Work email
-          </label>
-          <div className="relative">
-            <Icon name="at" size={17} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-navy/45 pointer-events-none" />
-            <input
-              id="email"
-              type="email"
-              autoComplete="email"
-              required
-              value={email}
-              onChange={e => setEmail(e.target.value)}
-              placeholder="name@charantra.ai"
-              aria-invalid={!!error}
-              aria-describedby={error ? 'login-error' : 'login-help'}
-              className={`${field} border-line`}
-            />
-          </div>
-
-          <label htmlFor="password" className="block text-sm font-semibold text-navy mb-1.5 mt-5">
-            Password
-          </label>
-          <div className="relative">
-            <Icon name="lock" size={17} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-navy/45 pointer-events-none" />
-            <input
-              id="password"
-              type={show ? 'text' : 'password'}
-              autoComplete="current-password"
-              required
-              value={password}
-              onChange={e => setPassword(e.target.value)}
-              aria-invalid={!!error}
-              aria-describedby={error ? 'login-error' : undefined}
-              className={`${field} border-line pr-16`}
-            />
-            <button
-              type="button"
-              onClick={() => setShow(s => !s)}
-              aria-pressed={show}
-              aria-label={show ? 'Hide password' : 'Show password'}
-              className="absolute right-1.5 top-1/2 -translate-y-1/2 h-8 px-2.5 text-xs font-semibold text-navy/65 hover:text-navy hover:bg-navy/[0.05] rounded-md focus-visible:outline focus-visible:outline-2 focus-visible:outline-orange"
-            >
-              {show ? 'Hide' : 'Show'}
-            </button>
-          </div>
+          <p className="text-sm text-navy/65 mt-2 mb-8">Sign in with your Charantra Microsoft account.</p>
 
           {error && (
-            <p id="login-error" className="flex items-start gap-2 text-sm text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2.5 mt-5" role="alert">
+            <p id="login-error" className="flex items-start gap-2 text-sm text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2.5 mb-5" role="alert">
               <Icon name="alert" size={16} className="shrink-0 mt-0.5" />
               {error}
             </p>
           )}
 
-          <button
-            type="submit"
-            disabled={loading}
-            className="w-full h-11 mt-7 inline-flex items-center justify-center gap-2 bg-orange hover:bg-orange-deep disabled:opacity-60 disabled:cursor-wait text-navy text-[15px] font-semibold rounded-lg transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-navy"
+          <a
+            href="/api/auth/microsoft"
+            className="w-full h-11 inline-flex items-center justify-center gap-2.5 bg-orange hover:bg-orange-deep text-navy text-[15px] font-semibold rounded-lg transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-navy"
           >
-            {loading && <span className="h-4 w-4 rounded-full border-2 border-navy/30 border-t-navy animate-spin" aria-hidden="true" />}
-            {loading ? 'Signing in' : 'Sign in'}
-          </button>
+            <svg width="18" height="18" viewBox="0 0 21 21" aria-hidden="true">
+              <path fill="#f25022" d="M1 1h9v9H1z" />
+              <path fill="#7fba00" d="M11 1h9v9h-9z" />
+              <path fill="#00a4ef" d="M1 11h9v9H1z" />
+              <path fill="#ffb900" d="M11 11h9v9h-9z" />
+            </svg>
+            Sign in with Microsoft
+          </a>
           <p id="login-help" className="text-[13px] text-navy/60 mt-6 text-center">
             Access is limited to authorized Charantra email addresses.
           </p>
-        </form>
+        </div>
       </section>
     </div>
   )
